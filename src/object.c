@@ -94,122 +94,12 @@ robj *dupStringObject(robj *o) {
     return createStringObject(o->ptr,sdslen(o->ptr));
 }
 
-robj *createListObject(void) {
-    list *l = listCreate();
-    robj *o = createObject(REDIS_LIST,l);
-    listSetFreeMethod(l,decrRefCountVoid);
-    o->encoding = REDIS_ENCODING_LINKEDLIST;
-    return o;
-}
-
-robj *createZiplistObject(void) {
-    unsigned char *zl = ziplistNew();
-    robj *o = createObject(REDIS_LIST,zl);
-    o->encoding = REDIS_ENCODING_ZIPLIST;
-    return o;
-}
-
-robj *createSetObject(void) {
-    dict *d = dictCreate(&setDictType,NULL);
-    robj *o = createObject(REDIS_SET,d);
-    o->encoding = REDIS_ENCODING_HT;
-    return o;
-}
-
-robj *createIntsetObject(void) {
-    intset *is = intsetNew();
-    robj *o = createObject(REDIS_SET,is);
-    o->encoding = REDIS_ENCODING_INTSET;
-    return o;
-}
-
-robj *createHashObject(void) {
-    unsigned char *zl = ziplistNew();
-    robj *o = createObject(REDIS_HASH, zl);
-    o->encoding = REDIS_ENCODING_ZIPLIST;
-    return o;
-}
-
-robj *createZsetObject(void) {
-    zset *zs = zmalloc(sizeof(*zs));
-    robj *o;
-
-    zs->dict = dictCreate(&zsetDictType,NULL);
-    zs->zsl = zslCreate();
-    o = createObject(REDIS_ZSET,zs);
-    o->encoding = REDIS_ENCODING_SKIPLIST;
-    return o;
-}
-
-robj *createZsetZiplistObject(void) {
-    unsigned char *zl = ziplistNew();
-    robj *o = createObject(REDIS_ZSET,zl);
-    o->encoding = REDIS_ENCODING_ZIPLIST;
-    return o;
-}
-
 void freeStringObject(robj *o) {
     if (o->encoding == REDIS_ENCODING_RAW) {
         sdsfree(o->ptr);
     }
 }
 
-void freeListObject(robj *o) {
-    switch (o->encoding) {
-    case REDIS_ENCODING_LINKEDLIST:
-        listRelease((list*) o->ptr);
-        break;
-    case REDIS_ENCODING_ZIPLIST:
-        zfree(o->ptr);
-        break;
-    default:
-        redisPanic("Unknown list encoding type");
-    }
-}
-
-void freeSetObject(robj *o) {
-    switch (o->encoding) {
-    case REDIS_ENCODING_HT:
-        dictRelease((dict*) o->ptr);
-        break;
-    case REDIS_ENCODING_INTSET:
-        zfree(o->ptr);
-        break;
-    default:
-        redisPanic("Unknown set encoding type");
-    }
-}
-
-void freeZsetObject(robj *o) {
-    zset *zs;
-    switch (o->encoding) {
-    case REDIS_ENCODING_SKIPLIST:
-        zs = o->ptr;
-        dictRelease(zs->dict);
-        zslFree(zs->zsl);
-        zfree(zs);
-        break;
-    case REDIS_ENCODING_ZIPLIST:
-        zfree(o->ptr);
-        break;
-    default:
-        redisPanic("Unknown sorted set encoding");
-    }
-}
-
-void freeHashObject(robj *o) {
-    switch (o->encoding) {
-    case REDIS_ENCODING_HT:
-        dictRelease((dict*) o->ptr);
-        break;
-    case REDIS_ENCODING_ZIPLIST:
-        zfree(o->ptr);
-        break;
-    default:
-        redisPanic("Unknown hash encoding type");
-        break;
-    }
-}
 
 void incrRefCount(robj *o) {
     o->refcount++;
@@ -219,11 +109,7 @@ void decrRefCount(robj *o) {
     if (o->refcount <= 0) redisPanic("decrRefCount against refcount <= 0");
     if (o->refcount == 1) {
         switch(o->type) {
-        case REDIS_STRING: freeStringObject(o); break;
-        case REDIS_LIST: freeListObject(o); break;
-        case REDIS_SET: freeSetObject(o); break;
-        case REDIS_ZSET: freeZsetObject(o); break;
-        case REDIS_HASH: freeHashObject(o); break;
+	case REDIS_STRING: freeStringObject(o); break;
         default: redisPanic("Unknown object type"); break;
         }
         zfree(o);

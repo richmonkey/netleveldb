@@ -617,15 +617,7 @@ void disconnectSlaves(void) {
 /* This function is called when the slave lose the connection with the
  * master into an unexpected way. */
 void replicationHandleMasterDisconnection(void) {
-    server.master = NULL;
-    server.repl_state = REDIS_REPL_CONNECT;
-    server.repl_down_since = server.unixtime;
-    /* We lost connection with our master, force our slaves to resync
-     * with us as well to load the new data set.
-     *
-     * If server.masterhost is NULL the user called SLAVEOF NO ONE so
-     * slave resync is not needed. */
-    if (server.masterhost != NULL) disconnectSlaves();
+
 }
 
 void freeClient(redisClient *c) {
@@ -634,22 +626,6 @@ void freeClient(redisClient *c) {
     /* If this is marked as current client unset it */
     if (server.current_client == c) server.current_client = NULL;
 
-    /* If it is our master that's beging disconnected we should make sure
-     * to cache the state to try a partial resynchronization later.
-     *
-     * Note that before doing this we make sure that the client is not in
-     * some unexpected state, by checking its flags. */
-    if (server.master &&
-         (c->flags & REDIS_MASTER) &&
-        !(c->flags & (REDIS_CLOSE_AFTER_REPLY|
-                     REDIS_CLOSE_ASAP|
-                     REDIS_BLOCKED|
-                     REDIS_UNBLOCKED)))
-    {
-        replicationCacheMaster(c);
-        return;
-    }
-
     /* Note that if the client we are freeing is blocked into a blocking
      * call, we have to set querybuf to NULL *before* to call
      * unblockClientWaitingData() to avoid processInputBuffer() will get
@@ -657,16 +633,11 @@ void freeClient(redisClient *c) {
      * this, because this call adds the READABLE event. */
     sdsfree(c->querybuf);
     c->querybuf = NULL;
-    if (c->flags & REDIS_BLOCKED)
-        unblockClientWaitingData(c);
     dictRelease(c->bpop.keys);
 
     /* UNWATCH all the keys */
     unwatchAllKeys(c);
     listRelease(c->watched_keys);
-    /* Unsubscribe from all the pubsub channels */
-    pubsubUnsubscribeAllChannels(c,0);
-    pubsubUnsubscribeAllPatterns(c,0);
     dictRelease(c->pubsub_channels);
     listRelease(c->pubsub_patterns);
     /* Close socket, unregister events, and remove list of replies and
@@ -692,22 +663,6 @@ void freeClient(redisClient *c) {
         listDelNode(server.unblocked_clients,ln);
     }
     listRelease(c->io_keys);
-    /* Master/slave cleanup.
-     * Case 1: we lost the connection with a slave. */
-    if (c->flags & REDIS_SLAVE) {
-        if (c->replstate == REDIS_REPL_SEND_BULK && c->repldbfd != -1)
-            close(c->repldbfd);
-        list *l = (c->flags & REDIS_MONITOR) ? server.monitors : server.slaves;
-        ln = listSearchKey(l,c);
-        redisAssert(ln != NULL);
-        listDelNode(l,ln);
-        /* We need to remember the time when we started to have zero
-         * attached slaves, as after some time we'll free the replication
-         * backlog. */
-        if (c->flags & REDIS_SLAVE && listLength(server.slaves) == 0)
-            server.repl_no_slaves_since = server.unixtime;
-        refreshGoodSlavesCount();
-    }
 
     /* Case 2: we lost the connection with the master. */
     if (c->flags & REDIS_MASTER) replicationHandleMasterDisconnection();
