@@ -32,6 +32,7 @@ ifeq ($(uname_S),Linux)
 else
 	MALLOC=libc
 endif
+MALLOC=libc
 
 # Backwards compatibility for selecting an allocator
 ifeq ($(USE_TCMALLOC),yes)
@@ -46,9 +47,10 @@ ifeq ($(USE_JEMALLOC),yes)
 	MALLOC=jemalloc
 endif
 
+
 # Override default settings if possible
 -include .make-settings
-
+MALLOC=libc
 FINAL_CFLAGS=$(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS) $(REDIS_CFLAGS)
 FINAL_LDFLAGS=$(LDFLAGS) $(REDIS_LDFLAGS) $(DEBUG)
 FINAL_LIBS=-lm -lstdc++
@@ -94,15 +96,16 @@ SRCCOLOR="\033[33m"
 BINCOLOR="\033[37;1m"
 MAKECOLOR="\033[32;1m"
 ENDCOLOR="\033[0m"
-
+define V
+endef
 ifndef V
-QUIET_CC = @printf '    %b %b\n' $(CCCOLOR)CC$(ENDCOLOR) $(SRCCOLOR)$@$(ENDCOLOR) 1>&2;
-QUIET_LINK = @printf '    %b %b\n' $(LINKCOLOR)LINK$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR) 1>&2;
-QUIET_INSTALL = @printf '    %b %b\n' $(LINKCOLOR)INSTALL$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR) 1>&2;
+#QUIET_CC = @printf '    %b %b\n' $(CCCOLOR)CC$(ENDCOLOR) $(SRCCOLOR)$@$(ENDCOLOR) 1>&2;
+#QUIET_LINK = @printf '    %b %b\n' $(LINKCOLOR)LINK$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR) 1>&2;
+#QUIET_INSTALL = @printf '    %b %b\n' $(LINKCOLOR)INSTALL$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR) 1>&2;
 endif
 
 REDIS_SERVER_NAME=redis-server
-REDIS_SERVER_OBJ=adlist.o ae.o anet.o dict.o ds.o redis.o sds.o zmalloc.o lzf_c.o lzf_d.o pqsort.o zipmap.o sha1.o release.o networking.o util.o object.o db.o config.o multi.o debug.o syncio.o endianconv.o slowlog.o  rand.o memtest.o crc64.o notify.o setproctitle.o
+REDIS_SERVER_OBJ=adlist.o ae.o anet.o dict.o ds.o redis.o sds.o zmalloc.o lzf_c.o lzf_d.o pqsort.o zipmap.o sha1.o release.o networking.o util.o object.o db.o config.o multi.o debug.o syncio.o endianconv.o slowlog.o  rand.o memtest.o crc64.o notify.o setproctitle.o replication.o
 REDIS_CLI_NAME=redis-cli
 REDIS_CLI_OBJ=anet.o sds.o adlist.o redis-cli.o zmalloc.o release.o anet.o ae.o crc64.o
 REDIS_BENCHMARK_NAME=redis-benchmark

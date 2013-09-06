@@ -617,7 +617,15 @@ void disconnectSlaves(void) {
 /* This function is called when the slave lose the connection with the
  * master into an unexpected way. */
 void replicationHandleMasterDisconnection(void) {
-
+    server.master = NULL;
+    server.repl_state = REDIS_REPL_CONNECT;
+    server.repl_down_since = server.unixtime;
+    /* We lost connection with our master, force our slaves to resync
+     * with us as well to load the new data set.
+     *
+     * If server.masterhost is NULL the user called SLAVEOF NO ONE so
+     * slave resync is not needed. */
+    if (server.masterhost != NULL) disconnectSlaves();
 }
 
 void freeClient(redisClient *c) {
@@ -655,14 +663,27 @@ void freeClient(redisClient *c) {
         redisAssert(ln != NULL);
         listDelNode(server.clients,ln);
     }
-    /* When client was just unblocked because of a blocking operation,
-     * remove it from the list with unblocked clients. */
-    if (c->flags & REDIS_UNBLOCKED) {
-        ln = listSearchKey(server.unblocked_clients,c);
-        redisAssert(ln != NULL);
-        listDelNode(server.unblocked_clients,ln);
-    }
     listRelease(c->io_keys);
+
+     /* Master/slave cleanup.
+     * Case 1: we lost the connection with a slave. */
+    if (c->flags & REDIS_SLAVE) {
+        if (c->replstate == REDIS_REPL_SEND_BULK) {
+            if (c->repl_binlog_reader)
+                leveldb_binlog_close(c->repl_binlog_reader);
+            sdsfree(c->repl_cmd);
+        } 
+        list *l = (c->flags & REDIS_MONITOR) ? server.monitors : server.slaves;
+        ln = listSearchKey(l,c);
+        redisAssert(ln != NULL);
+        listDelNode(l,ln);
+        /* We need to remember the time when we started to have zero
+         * attached slaves, as after some time we'll free the replication
+         * backlog. */
+        if (c->flags & REDIS_SLAVE && listLength(server.slaves) == 0)
+            server.repl_no_slaves_since = server.unixtime;
+        refreshGoodSlavesCount();
+    }
 
     /* Case 2: we lost the connection with the master. */
     if (c->flags & REDIS_MASTER) replicationHandleMasterDisconnection();
@@ -972,7 +993,9 @@ int processMultibulkBuffer(redisClient *c) {
     if (pos) sdsrange(c->querybuf,pos,-1);
 
     /* We're done when c->multibulk == 0 */
-    if (c->multibulklen == 0) return REDIS_OK;
+    if (c->multibulklen == 0) {
+        return REDIS_OK;
+    }
 
     /* Still not read to process the command */
     return REDIS_ERR;

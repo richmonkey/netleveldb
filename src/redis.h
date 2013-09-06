@@ -482,6 +482,10 @@ typedef struct redisClient {
     dict *pubsub_channels;  /* channels a client is interested in (SUBSCRIBE) */
     list *pubsub_patterns;  /* patterns a client is interested in (SUBSCRIBE) */
 
+    struct leveldb_binlog_reader_t *repl_binlog_reader;
+    uint64_t repl_binlog_seq;
+    sds repl_cmd;
+
     /* Response buffer */
     int bufpos;
     char buf[REDIS_REPLY_CHUNK_BYTES];
@@ -574,7 +578,6 @@ struct redisServer {
     leveldb_writeoptions_t *woptions;
     leveldb_readoptions_t  *roptions;
     
-    uint16_t     ds_open;
     uint16_t     ds_lru_cache;
     uint16_t     ds_create_if_missing;
     uint16_t     ds_error_if_exists;
@@ -584,8 +587,7 @@ struct redisServer {
     uint16_t     ds_max_open_files;
     uint16_t     ds_block_restart_interval;
     char         *ds_path;
-    uint32_t     rl_ttl;
-    uint32_t     rl_ttlcheck;
+
 
     /* General */
     char *configfile;           /* Absolute config file path, or NULL */
@@ -661,21 +663,45 @@ struct redisServer {
     int daemonize;                  /* True if running as a daemon */
     clientBufferLimitsConfig client_obuf_limits[REDIS_CLIENT_LIMIT_NUM_CLASSES];
 
+    long long dirty;
     /* Logging */
     char *logfile;                  /* Path of log file */
     int syslog_enabled;             /* Is syslog enabled? */
     char *syslog_ident;             /* Syslog ident */
     int syslog_facility;            /* Syslog facility */
- 
+
+     /* Replication (master) */
+    int slaveseldb;                 /* Last SELECTed DB in replication output */
+
+    int repl_min_slaves_to_write;   /* Min number of slaves to write. */
+    int repl_min_slaves_max_lag;    /* Max lag of <count> slaves to write. */
+    int repl_good_slaves_count;     /* Number of slaves with lag <= max_lag. */
+    int repl_ping_slave_period;     /* Master pings the slave every N seconds */
+    time_t repl_no_slaves_since;    /* We have no slaves since that time.
+                                       Only valid if server.slaves len is 0. */
+
+    /* Replication (slave) */
+    char *masterauth;               /* AUTH with this password with master */
+    char *masterhost;               /* Hostname of master */
+    int masterport;                 /* Port of master */
+
+    redisClient *master;     /* Client that is master for this slave */
+    int repl_timeout;               /* Timeout after N seconds of master idle */
+    int repl_syncio_timeout; /* Timeout for synchronous I/O calls */
+    int repl_state;          /* Replication status if the instance is a slave */
+    time_t repl_transfer_lastio; /* Unix time of the latest read, for timeout */
+    int repl_transfer_s;     /* Slave -> Master SYNC socket */
+    int repl_slave_ro;          /* Slave is read only? */
+    int repl_serve_stale_data; /* Serve stale data when link is down? */
+    int slave_priority;             /* Reported in INFO and used by Sentinel. */
+    time_t repl_down_since; /* Unix time at which link with master went down */
+
+
     /* Limits */
     unsigned int maxclients;        /* Max number of simultaneous clients */
     unsigned long long maxmemory;   /* Max number of memory bytes to use */
     int maxmemory_policy;           /* Policy for key eviction */
     int maxmemory_samples;          /* Pricision of random sampling */
-    /* Blocked clients */
-    unsigned int bpop_blocked_clients; /* Number of clients blocked by lists */
-    list *unblocked_clients; /* list of clients to unblock before next loop */
-    list *ready_keys;        /* List of readyList structures for BLPOP & co */
     /* Sort parameters - qsort_r() is only available under BSD so we
      * have to take this state global, in order to pass it to sortCompare() */
     int sort_desc;
@@ -928,14 +954,14 @@ ssize_t syncRead(int fd, char *ptr, ssize_t size, long long timeout);
 ssize_t syncReadLine(int fd, char *ptr, ssize_t size, long long timeout);
 
 /* Replication */
-//void replicationFeedSlaves(list *slaves, int dictid, robj **argv, int argc);
+void replicationFeedSlaves(list *slaves, int dictid, robj **argv, int argc);
 //void replicationFeedMonitors(redisClient *c, list *monitors, int dictid, robj **argv, int argc);
 //void updateSlavesWaitingBgsave(int bgsaveerr);
-//void replicationCron(void);
+void replicationCron(void);
 //void replicationHandleMasterDisconnection(void);
 //void replicationCacheMaster(redisClient *c);
 //void resizeReplicationBacklog(long long newsize);
-//void refreshGoodSlavesCount(void);
+void refreshGoodSlavesCount(void);
 //void replicationScriptCacheInit(void);
 //void replicationScriptCacheFlush(void);
 //void replicationScriptCacheAdd(sds sha1);

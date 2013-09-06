@@ -129,6 +129,32 @@ void loadServerConfigFromString(char *config) {
             if (errno || server.unixsocketperm > 0777) {
                 err = "Invalid socket file permissions"; goto loaderr;
             }
+        }  else if (!strcasecmp(argv[0],"slaveof") && argc == 3) {
+            server.masterhost = sdsnew(argv[1]);
+            server.masterport = atoi(argv[2]);
+            server.repl_state = REDIS_REPL_CONNECT;
+        } else if (!strcasecmp(argv[0],"repl-ping-slave-period") && argc == 2) {
+            server.repl_ping_slave_period = atoi(argv[1]);
+            if (server.repl_ping_slave_period <= 0) {
+                err = "repl-ping-slave-period must be 1 or greater";
+                goto loaderr;
+            }
+        } else if (!strcasecmp(argv[0],"repl-timeout") && argc == 2) {
+            server.repl_timeout = atoi(argv[1]);
+            if (server.repl_timeout <= 0) {
+                err = "repl-timeout must be 1 or greater";
+                goto loaderr;
+            }
+        } else if (!strcasecmp(argv[0],"masterauth") && argc == 2) {
+        	server.masterauth = zstrdup(argv[1]);
+        } else if (!strcasecmp(argv[0],"slave-serve-stale-data") && argc == 2) {
+            if ((server.repl_serve_stale_data = yesnotoi(argv[1])) == -1) {
+                err = "argument must be 'yes' or 'no'"; goto loaderr;
+            }
+        } else if (!strcasecmp(argv[0],"slave-read-only") && argc == 2) {
+            if ((server.repl_slave_ro = yesnotoi(argv[1])) == -1) {
+                err = "argument must be 'yes' or 'no'"; goto loaderr;
+            }
         } else if (!strcasecmp(argv[0],"dir") && argc == 2) {
             if (chdir(argv[1]) == -1) {
                 redisLog(REDIS_WARNING,"Can't chdir to '%s': %s",
@@ -290,43 +316,45 @@ void loadServerConfigFromString(char *config) {
             server.client_obuf_limits[class].hard_limit_bytes = hard;
             server.client_obuf_limits[class].soft_limit_bytes = soft;
             server.client_obuf_limits[class].soft_limit_seconds = soft_seconds;
-        } else if (!strcasecmp(argv[0],"ds:open") && argc == 2) {
-            server.ds_open = atoi(argv[1]);
-            if (server.ds_open < 0 || server.ds_open > 1) 
-            {
-                err = "Invalid ds_open"; goto loaderr;
+        } else if (!strcasecmp(argv[0],"slave-priority") && argc == 2) {
+            server.slave_priority = atoi(argv[1]);
+        } else if (!strcasecmp(argv[0],"min-slaves-to-write") && argc == 2) {
+            server.repl_min_slaves_to_write = atoi(argv[1]);
+            if (server.repl_min_slaves_to_write < 0) {
+                err = "Invalid value for min-slaves-to-write."; goto loaderr;
             }
-        } else if (!strcasecmp(argv[0],"ds:create_if_missing") && argc == 2) {
+        } else if (!strcasecmp(argv[0],"min-slaves-max-lag") && argc == 2) {
+            server.repl_min_slaves_max_lag = atoi(argv[1]);
+            if (server.repl_min_slaves_max_lag < 0) {
+                err = "Invalid value for min-slaves-max-lag."; goto loaderr;
+            }
+        } else if (!strcasecmp(argv[0],"create_if_missing") && argc == 2) {
             server.ds_create_if_missing = atoi(argv[1]);
             if (server.ds_create_if_missing < 0 || server.ds_create_if_missing > 1) {
                 err = "Invalid ds_create_if_missing"; goto loaderr;
             }
-        } else if (!strcasecmp(argv[0],"ds:error_if_exists") && argc == 2) {
+        } else if (!strcasecmp(argv[0],"error_if_exists") && argc == 2) {
 	    server.ds_error_if_exists = atoi(argv[1]);
             if (server.ds_error_if_exists < 0 || server.ds_error_if_exists > 1) {
                 err = "Invalid ds_error_if_exists"; goto loaderr;
             }
-        } else if (!strcasecmp(argv[0],"ds:paranoid_checks") && argc == 2) {
+        } else if (!strcasecmp(argv[0],"paranoid_checks") && argc == 2) {
             server.ds_paranoid_checks = atoi(argv[1]);
             if (server.ds_paranoid_checks < 0 || server.ds_paranoid_checks > 1) {
                 err = "Invalid ds_paranoid_checks"; goto loaderr;
             }
-        } else if (!strcasecmp(argv[0],"ds:ds_lru_cache") && argc == 2) {
+        } else if (!strcasecmp(argv[0],"ds_lru_cache") && argc == 2) {
             server.ds_lru_cache = strtoul(argv[1],NULL,10);
-        } else if (!strcasecmp(argv[0],"ds:write_buffer_size") && argc == 2) {
+        } else if (!strcasecmp(argv[0],"write_buffer_size") && argc == 2) {
             server.ds_write_buffer_size = strtoul(argv[1],NULL,10);
-        } else if (!strcasecmp(argv[0],"ds:block_size") && argc == 2) {
+        } else if (!strcasecmp(argv[0],"block_size") && argc == 2) {
             server.ds_block_size = strtoul(argv[1],NULL,10);
-        } else if (!strcasecmp(argv[0],"ds:max_open_files") && argc == 2) {
+        } else if (!strcasecmp(argv[0],"max_open_files") && argc == 2) {
             server.ds_max_open_files = atoi(argv[1]);
-        } else if (!strcasecmp(argv[0],"ds:block_restart_interval") && argc == 2) {
+        } else if (!strcasecmp(argv[0],"block_restart_interval") && argc == 2) {
             server.ds_block_restart_interval = atoi(argv[1]);
-        } else if (!strcasecmp(argv[0],"ds:path") && argc == 2) {
+        } else if (!strcasecmp(argv[0],"path") && argc == 2) {
             server.ds_path = zstrdup(argv[1]);
-        } else if (!strcasecmp(argv[0],"rl:ttl") && argc == 2) {
-            server.rl_ttl = atoi(argv[1]);
-        } else if (!strcasecmp(argv[0],"rl:ttlcheck") && argc == 2) {
-            server.rl_ttlcheck = atoi(argv[1]);
         } else {
             err = "Bad directive or wrong number of arguments"; goto loaderr;
         }
@@ -395,6 +423,9 @@ void configSetCommand(redisClient *c) {
         if (sdslen(o->ptr) > REDIS_AUTHPASS_MAX_LEN) goto badfmt;
         zfree(server.requirepass);
         server.requirepass = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
+    } else if (!strcasecmp(c->argv[2]->ptr,"masterauth")) {
+        zfree(server.masterauth);
+        server.masterauth = ((char*)o->ptr)[0] ? zstrdup(o->ptr) : NULL;
     } else if (!strcasecmp(c->argv[2]->ptr,"maxclients")) {
         int orig_value = server.maxclients;
 
@@ -454,6 +485,16 @@ void configSetCommand(redisClient *c) {
         if (getLongLongFromObject(o,&ll) == REDIS_ERR ||
             ll < 0 || ll > INT_MAX) goto badfmt;
         server.tcpkeepalive = ll;
+    } else if (!strcasecmp(c->argv[2]->ptr,"slave-serve-stale-data")) {
+        int yn = yesnotoi(o->ptr);
+
+        if (yn == -1) goto badfmt;
+        server.repl_serve_stale_data = yn;
+    } else if (!strcasecmp(c->argv[2]->ptr,"slave-read-only")) {
+        int yn = yesnotoi(o->ptr);
+
+        if (yn == -1) goto badfmt;
+        server.repl_slave_ro = yn;
     } else if (!strcasecmp(c->argv[2]->ptr,"dir")) {
         if (chdir((char*)o->ptr) == -1) {
             addReplyErrorFormat(c,"Changing directory: %s", strerror(errno));
@@ -523,12 +564,32 @@ void configSetCommand(redisClient *c) {
             server.client_obuf_limits[class].soft_limit_seconds = soft_seconds;
         }
         sdsfreesplitres(v,vlen);
+    } else if (!strcasecmp(c->argv[2]->ptr,"repl-ping-slave-period")) {
+        if (getLongLongFromObject(o,&ll) == REDIS_ERR || ll <= 0) goto badfmt;
+        server.repl_ping_slave_period = ll;
+    } else if (!strcasecmp(c->argv[2]->ptr,"repl-timeout")) {
+        if (getLongLongFromObject(o,&ll) == REDIS_ERR || ll <= 0) goto badfmt;
+        server.repl_timeout = ll;
     } else if (!strcasecmp(c->argv[2]->ptr,"watchdog-period")) {
         if (getLongLongFromObject(o,&ll) == REDIS_ERR || ll < 0) goto badfmt;
         if (ll)
             enableWatchdog(ll);
         else
             disableWatchdog();
+    } else if (!strcasecmp(c->argv[2]->ptr,"slave-priority")) {
+        if (getLongLongFromObject(o,&ll) == REDIS_ERR ||
+            ll < 0) goto badfmt;
+        server.slave_priority = ll;
+    } else if (!strcasecmp(c->argv[2]->ptr,"min-slaves-to-write")) {
+        if (getLongLongFromObject(o,&ll) == REDIS_ERR ||
+            ll < 0) goto badfmt;
+        server.repl_min_slaves_to_write = ll;
+        refreshGoodSlavesCount();
+    } else if (!strcasecmp(c->argv[2]->ptr,"min-slaves-max-lag")) {
+        if (getLongLongFromObject(o,&ll) == REDIS_ERR ||
+            ll < 0) goto badfmt;
+        server.repl_min_slaves_max_lag = ll;
+        refreshGoodSlavesCount();
     } else {
         addReplyErrorFormat(c,"Unsupported CONFIG parameter: %s",
             (char*)c->argv[2]->ptr);
