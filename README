@@ -4,6 +4,12 @@ Where to find complete Redis documentation?
 This README is just a fast "quick start" document. You can find more detailed
 documentation at http://redis.io
 
+Download leveldb
+--------------
+
+git submodule init
+git submodule update
+
 Building Redis
 --------------
 
