@@ -48,7 +48,6 @@
 #include <pthread.h>
 #include <syslog.h>
 #include <netinet/in.h>
-#include <lua.h>
 #include <signal.h>
 #include <leveldb/c.h>
 
@@ -58,8 +57,7 @@
 #include "adlist.h"  /* Linked lists */
 #include "zmalloc.h" /* total memory usage aware version of malloc/free */
 #include "anet.h"    /* Networking the easy way */
-#include "ziplist.h" /* Compact list data structure */
-#include "intset.h"  /* Compact integer set structure */
+//#include "ziplist.h" /* Compact list data structure */
 #include "version.h" /* Version macro */
 #include "util.h"    /* Misc functions useful in many places */
 
@@ -478,7 +476,9 @@ typedef struct redisClient {
     blockingState bpop;   /* blocking state */
     list *io_keys;          /* Keys this client is waiting to be loaded from the
                              * swap file in order to continue. */
+
     list *watched_keys;     /* Keys WATCHED for MULTI/EXEC CAS */
+
     dict *pubsub_channels;  /* channels a client is interested in (SUBSCRIBE) */
     list *pubsub_patterns;  /* patterns a client is interested in (SUBSCRIBE) */
 
@@ -511,28 +511,6 @@ struct sharedObjectsStruct {
     *bulkhdr[REDIS_SHARED_BULKHDR_LEN];  /* "$<value>\r\n" */
 };
 
-/* ZSETs use a specialized version of Skiplists */
-typedef struct zskiplistNode {
-    robj *obj;
-    double score;
-    struct zskiplistNode *backward;
-    struct zskiplistLevel {
-        struct zskiplistNode *forward;
-        unsigned int span;
-    } level[];
-} zskiplistNode;
-
-typedef struct zskiplist {
-    struct zskiplistNode *header, *tail;
-    unsigned long length;
-    int level;
-} zskiplist;
-
-typedef struct zset {
-    dict *dict;
-    zskiplist *zsl;
-} zset;
-
 typedef struct clientBufferLimitsConfig {
     unsigned long long hard_limit_bytes;
     unsigned long long soft_limit_bytes;
@@ -540,30 +518,6 @@ typedef struct clientBufferLimitsConfig {
 } clientBufferLimitsConfig;
 
 extern clientBufferLimitsConfig clientBufferLimitsDefaults[REDIS_CLIENT_LIMIT_NUM_CLASSES];
-
-/* The redisOp structure defines a Redis Operation, that is an instance of
- * a command with an argument vector, database ID, propagation target
- * (REDIS_PROPAGATE_*), and command pointer.
- *
- * Currently only used to additionally propagate more commands to AOF/Replication
- * after the propagation of the executed command. */
-typedef struct redisOp {
-    robj **argv;
-    int argc, dbid, target;
-    struct redisCommand *cmd;
-} redisOp;
-
-/* Defines an array of Redis operations. There is an API to add to this
- * structure in a easy way.
- *
- * redisOpArrayInit();
- * redisOpArrayAppend();
- * redisOpArrayFree();
- */
-typedef struct redisOpArray {
-    redisOp *ops;
-    int numops;
-} redisOpArray;
 
 /*-----------------------------------------------------------------------------
  * Global server state
@@ -720,7 +674,6 @@ struct redisServer {
     int watchdog_period;  /* Software watchdog period in ms. 0 = off */
 };
 
-
 typedef void redisCommandProc(redisClient *c);
 typedef int *redisGetKeysProc(struct redisCommand *cmd, robj **argv, int argc, int *numkeys, int flags);
 struct redisCommand {
@@ -737,63 +690,7 @@ struct redisCommand {
     int keystep;  /* The step between first and last key */
     long long microseconds, calls;
 };
-#if 0
-struct redisFunctionSym {
-    char *name;
-    unsigned long pointer;
-};
 
-typedef struct _redisSortObject {
-    robj *obj;
-    union {
-        double score;
-        robj *cmpobj;
-    } u;
-} redisSortObject;
-
-typedef struct _redisSortOperation {
-    int type;
-    robj *pattern;
-} redisSortOperation;
-
-/* Structure to hold list iteration abstraction. */
-typedef struct {
-    robj *subject;
-    unsigned char encoding;
-    unsigned char direction; /* Iteration direction */
-    unsigned char *zi;
-    listNode *ln;
-} listTypeIterator;
-
-/* Structure for an entry while iterating over a list. */
-typedef struct {
-    listTypeIterator *li;
-    unsigned char *zi;  /* Entry in ziplist */
-    listNode *ln;       /* Entry in linked list */
-} listTypeEntry;
-
-/* Structure to hold set iteration abstraction. */
-typedef struct {
-    robj *subject;
-    int encoding;
-    int ii; /* intset iterator */
-    dictIterator *di;
-} setTypeIterator;
-
-/* Structure to hold hash iteration abstraction. Note that iteration over
- * hashes involves both fields and values. Because it is possible that
- * not both are required, store pointers in the iterator to avoid
- * unnecessary memory allocation for fields/values. */
-typedef struct {
-    robj *subject;
-    int encoding;
-
-    unsigned char *fptr, *vptr;
-
-    dictIterator *di;
-    dictEntry *de;
-} hashTypeIterator;
-#endif
 
 #define REDIS_HASH_KEY 1
 #define REDIS_HASH_VALUE 2
@@ -880,24 +777,7 @@ void addReplyErrorFormat(redisClient *c, const char *fmt, ...);
 void addReplyStatusFormat(redisClient *c, const char *fmt, ...);
 #endif
 
-#if 0
-/* List data type */
-void listTypeTryConversion(robj *subject, robj *value);
-void listTypePush(robj *subject, robj *value, int where);
-robj *listTypePop(robj *subject, int where);
-unsigned long listTypeLength(robj *subject);
-listTypeIterator *listTypeInitIterator(robj *subject, long index, unsigned char direction);
-void listTypeReleaseIterator(listTypeIterator *li);
-int listTypeNext(listTypeIterator *li, listTypeEntry *entry);
-robj *listTypeGet(listTypeEntry *entry);
-void listTypeInsert(listTypeEntry *entry, robj *value, int where);
-int listTypeEqual(listTypeEntry *entry, robj *o);
-void listTypeDelete(listTypeEntry *entry);
-void listTypeConvert(robj *subject, int enc);
-void unblockClientWaitingData(redisClient *c);
-void handleClientsBlockedOnLists(void);
-void popGenericCommand(redisClient *c, int where);
-#endif
+
 
 /* MULTI/EXEC/WATCH... */
 void unwatchAllKeys(redisClient *c);
@@ -955,57 +835,8 @@ ssize_t syncReadLine(int fd, char *ptr, ssize_t size, long long timeout);
 
 /* Replication */
 void replicationFeedSlaves(list *slaves, int dictid, robj **argv, int argc);
-//void replicationFeedMonitors(redisClient *c, list *monitors, int dictid, robj **argv, int argc);
-//void updateSlavesWaitingBgsave(int bgsaveerr);
 void replicationCron(void);
-//void replicationHandleMasterDisconnection(void);
-//void replicationCacheMaster(redisClient *c);
-//void resizeReplicationBacklog(long long newsize);
 void refreshGoodSlavesCount(void);
-//void replicationScriptCacheInit(void);
-//void replicationScriptCacheFlush(void);
-//void replicationScriptCacheAdd(sds sha1);
-//int replicationScriptCacheExists(sds sha1);
-
-/* Generic persistence functions */
-//void startLoading(FILE *fp);
-//void loadingProgress(off_t pos);
-//void stopLoading(void);
-
-/* RDB persistence */
-//#include "rdb.h"
-
-/* AOF persistence */
-//void flushAppendOnlyFile(int force);
-//void feedAppendOnlyFile(struct redisCommand *cmd, int dictid, robj **argv, int argc);
-//void aofRemoveTempFile(pid_t childpid);
-//int rewriteAppendOnlyFileBackground(void);
-//int loadAppendOnlyFile(char *filename);
-//void stopAppendOnly(void);
-//int startAppendOnly(void);
-//void backgroundRewriteDoneHandler(int exitcode, int bysignal);
-//void aofRewriteBufferReset(void);
-//unsigned long aofRewriteBufferSize(void);
-
-/* Sorted sets data type */
-
-/* Struct to hold a inclusive/exclusive range spec. */
-typedef struct {
-    double min, max;
-    int minex, maxex; /* are min or max exclusive? */
-} zrangespec;
-
-zskiplist *zslCreate(void);
-void zslFree(zskiplist *zsl);
-zskiplistNode *zslInsert(zskiplist *zsl, double score, robj *obj);
-unsigned char *zzlInsert(unsigned char *zl, robj *ele, double score);
-int zslDelete(zskiplist *zsl, double score, robj *obj);
-zskiplistNode *zslFirstInRange(zskiplist *zsl, zrangespec range);
-double zzlGetScore(unsigned char *sptr);
-void zzlNext(unsigned char *zl, unsigned char **eptr, unsigned char **sptr);
-void zzlPrev(unsigned char *zl, unsigned char **eptr, unsigned char **sptr);
-unsigned int zsetLength(robj *zobj);
-void zsetConvert(robj *zobj, int encoding);
 
 /* Core functions */
 int freeMemoryIfNeeded(void);
@@ -1036,56 +867,10 @@ void resetCommandTableStats(void);
 void adjustOpenFilesLimit(void);
 void closeListeningSockets(int unlink_unix_socket);
 
-#if 0
-/* Set data type */
-robj *setTypeCreate(robj *value);
-int setTypeAdd(robj *subject, robj *value);
-int setTypeRemove(robj *subject, robj *value);
-int setTypeIsMember(robj *subject, robj *value);
-setTypeIterator *setTypeInitIterator(robj *subject);
-void setTypeReleaseIterator(setTypeIterator *si);
-int setTypeNext(setTypeIterator *si, robj **objele, int64_t *llele);
-robj *setTypeNextObject(setTypeIterator *si);
-int setTypeRandomElement(robj *setobj, robj **objele, int64_t *llele);
-unsigned long setTypeSize(robj *subject);
-void setTypeConvert(robj *subject, int enc);
 
-/* Hash data type */
-void hashTypeConvert(robj *o, int enc);
-void hashTypeTryConversion(robj *subject, robj **argv, int start, int end);
-void hashTypeTryObjectEncoding(robj *subject, robj **o1, robj **o2);
-robj *hashTypeGetObject(robj *o, robj *key);
-int hashTypeExists(robj *o, robj *key);
-int hashTypeSet(robj *o, robj *key, robj *value);
-int hashTypeDelete(robj *o, robj *key);
-unsigned long hashTypeLength(robj *o);
-hashTypeIterator *hashTypeInitIterator(robj *subject);
-void hashTypeReleaseIterator(hashTypeIterator *hi);
-int hashTypeNext(hashTypeIterator *hi);
-void hashTypeCurrentFromZiplist(hashTypeIterator *hi, int what,
-                                unsigned char **vstr,
-                                unsigned int *vlen,
-                                long long *vll);
-void hashTypeCurrentFromHashTable(hashTypeIterator *hi, int what, robj **dst);
-robj *hashTypeCurrentObject(hashTypeIterator *hi, int what);
-robj *hashTypeLookupWriteOrCreate(redisClient *c, robj *key);
-
-/* Pub / Sub */
-int pubsubUnsubscribeAllChannels(redisClient *c, int notify);
-int pubsubUnsubscribeAllPatterns(redisClient *c, int notify);
-void freePubsubPattern(void *p);
-int listMatchPubsubPattern(void *a, void *b);
-int pubsubPublishMessage(robj *channel, robj *message);
-
-/* Keyspace events notification */
-void notifyKeyspaceEvent(int type, char *event, robj *key, int dbid);
-int keyspaceEventsStringToFlags(char *classes);
-sds keyspaceEventsFlagsToString(int flags);
-#endif
 /* Configuration */
 void loadServerConfig(char *filename, char *options);
-//void appendServerSaveParams(time_t seconds, int changes);
-//void resetServerSaveParams();
+
 
 /* db.c -- Keyspace access API */
 int removeExpire(redisDb *db, robj *key);
@@ -1119,16 +904,6 @@ int *noPreloadGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numke
 int *renameGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags);
 int *zunionInterGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys, int flags);
 
-#if 0
-/* Sentinel */
-void initSentinelConfig(void);
-void initSentinel(void);
-void sentinelTimer(void);
-char *sentinelHandleConfiguration(char **argv, int argc);
-
-/* Scripting */
-void scriptingInit(void);
-#endif
 
 /* Git SHA1 */
 char *redisGitSHA1(void);

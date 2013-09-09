@@ -4,7 +4,7 @@
 #
 # The Makefile composes the final FINAL_CFLAGS and FINAL_LDFLAGS using
 # what is needed for Redis plus the standard CFLAGS and LDFLAGS passed.
-# However when building the dependencies (Jemalloc, Lua, Hiredis, ...)
+# However when building the dependencies (Jemalloc, leveldb, Hiredis, ...)
 # CFLAGS and LDFLAGS are propagated to the dependencies, so to pass
 # flags only to be used when compiling / linking Redis itself REDIS_CFLAGS
 # and REDIS_LDFLAGS are used instead (this is the case of 'make gcov').
@@ -15,14 +15,14 @@
 release_hdr := $(shell sh -c './mkreleasehdr.sh')
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 OPTIMIZATION?=
-DEPENDENCY_TARGETS=hiredis linenoise lua leveldb
+DEPENDENCY_TARGETS=hiredis linenoise leveldb
 
 # Default settings
 STD=-std=c99 -pedantic
 WARN=-Wall
 OPT=$(OPTIMIZATION)
 
-PREFIX?=/home/houxh/netleveldb
+PREFIX?=/usr/local
 INSTALL_BIN=$(PREFIX)/bin
 INSTALL=install
 
@@ -32,7 +32,6 @@ ifeq ($(uname_S),Linux)
 else
 	MALLOC=libc
 endif
-MALLOC=libc
 
 # Backwards compatibility for selecting an allocator
 ifeq ($(USE_TCMALLOC),yes)
@@ -47,9 +46,9 @@ ifeq ($(USE_JEMALLOC),yes)
 	MALLOC=jemalloc
 endif
 
-
 # Override default settings if possible
 -include .make-settings
+
 MALLOC=libc
 FINAL_CFLAGS=$(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS) $(REDIS_CFLAGS)
 FINAL_LDFLAGS=$(LDFLAGS) $(REDIS_LDFLAGS) $(DEBUG)
@@ -68,7 +67,7 @@ else
 endif
 
 # Include paths to dependencies
-FINAL_CFLAGS+= -I../deps/hiredis -I../deps/linenoise -I../deps/lua/src -I../deps/leveldb/include
+FINAL_CFLAGS+= -I../deps/hiredis -I../deps/linenoise -I../deps/leveldb/include
 
 ifeq ($(MALLOC),tcmalloc)
 	FINAL_CFLAGS+= -DUSE_TCMALLOC
@@ -105,7 +104,7 @@ ifndef V
 endif
 
 REDIS_SERVER_NAME=redis-server
-REDIS_SERVER_OBJ=adlist.o ae.o anet.o dict.o ds.o redis.o sds.o zmalloc.o lzf_c.o lzf_d.o pqsort.o zipmap.o sha1.o release.o networking.o util.o object.o db.o config.o multi.o debug.o syncio.o endianconv.o slowlog.o  rand.o memtest.o crc64.o notify.o setproctitle.o replication.o
+REDIS_SERVER_OBJ=adlist.o ae.o anet.o dict.o ds.o redis.o sds.o zmalloc.o sha1.o release.o networking.o util.o object.o db.o config.o multi.o debug.o syncio.o endianconv.o slowlog.o rand.o memtest.o crc64.o setproctitle.o replication.o
 REDIS_CLI_NAME=redis-cli
 REDIS_CLI_OBJ=anet.o sds.o adlist.o redis-cli.o zmalloc.o release.o anet.o ae.o crc64.o
 REDIS_BENCHMARK_NAME=redis-benchmark
@@ -157,7 +156,7 @@ endif
 
 # redis-server
 $(REDIS_SERVER_NAME): $(REDIS_SERVER_OBJ)
-	$(REDIS_LD) -o $@ $^ ../deps/leveldb/libleveldb.a ../deps/hiredis/libhiredis.a ../deps/lua/src/liblua.a $(FINAL_LIBS)
+	$(REDIS_LD) -o $@ $^ ../deps/leveldb/libleveldb.a ../deps/hiredis/libhiredis.a  $(FINAL_LIBS)
 
 # redis-cli
 $(REDIS_CLI_NAME): $(REDIS_CLI_OBJ)
@@ -176,7 +175,7 @@ $(REDIS_BENCHMARK_NAME): $(REDIS_BENCHMARK_OBJ)
 	$(REDIS_CC) -c $<
 
 clean:
-	rm -rf $(REDIS_SERVER_NAME) $(REDIS_SENTINEL_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME) $(REDIS_CHECK_DUMP_NAME) $(REDIS_CHECK_AOF_NAME) *.o *.gcda *.gcno *.gcov redis.info lcov-html
+	rm -rf $(REDIS_SERVER_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME) *.o *.gcda *.gcno *.gcov redis.info lcov-html
 
 .PHONY: clean
 
