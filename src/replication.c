@@ -371,7 +371,7 @@ void keyDeleted(void* state, const char* k, size_t klen) {
     cmd = sdscatlen(cmd, " ", 1);
     cmd = sdscatlen(cmd, k, klen);
     cmd = sdscatlen(cmd, "\r\n", 2);
-    slave->repl_cmd;
+    slave->repl_cmd = cmd;
 }
 
 void sendBulkToSlave(aeEventLoop *el, int fd, void *privdata, int mask) {
