@@ -39,7 +39,6 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-
 void sendBulkToSlave(aeEventLoop *el, int fd, void *privdata, int mask);
 
 /* ---------------------------------- MASTER -------------------------------- */
@@ -82,7 +81,6 @@ void replicationFeedSlaves(list *slaves, int dictid, robj **argv, int argc) {
     }
     server.slaveseldb = dictid;
 
-    redisLog(REDIS_DEBUG, "replicationFeedSlaves");
     /* Write the command to every slave. */
     listRewind(slaves,&li);
     while((ln = listNext(&li))) {
@@ -126,6 +124,11 @@ void binlogFileName(uint64_t number, char *path, int len) {
              server.ds_path, number);
 }
 
+int fexists(const char *path) {
+    struct stat st;
+    return (stat(path, &st) == 0);
+}
+
 leveldb_binlog_reader_t* openBinlog(long long psync_offset, 
                                     uint64_t *binlog_seq) {
     char path[PATH_MAX];
@@ -155,32 +158,18 @@ leveldb_binlog_reader_t* openBinlog(long long psync_offset,
     //slot 1 is hole
     while (1) {
         leveldb_binlog_reader_t* reader;
-        size_t len;
-        const char *record;
 
         binlogFileName(last_seq, path, PATH_MAX);
-        reader = leveldb_binlog_open(path);
-        if (reader == NULL) {
+        if (!fexists(path)) {
             break;
         }
 
-        while (1) {
-            leveldb_writebatch_t* batch;
-            uint64_t s;
-            record = leveldb_binlog_read(reader, &len);
-            if (record == NULL) {
-                break;
-            }
-
-            batch = leveldb_writebatch_create();
-            leveldb_writebatch_init(batch, record, len);
-            s = leveldb_writebatch_sequence(batch);
-            if (s == psync_offset) {
-                *binlog_seq = last_seq;
-                return reader;
-            }
+        reader = leveldb_binlog_search(path, psync_offset);
+        if (reader) {
+            *binlog_seq = last_seq;
+            return reader;
         }
-        leveldb_binlog_close(reader);
+
         last_seq--;
     }
     return NULL;
